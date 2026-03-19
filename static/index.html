@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Worth The Drive?</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f0f4f8;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --accent: #0d9488;
+        --accent-dark: #0f766e;
+        --border: #e2e8f0;
+        --strong: #059669;
+        --warn: #d97706;
+        --bad: #dc2626;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        margin: 0;
+        padding: 0;
+        line-height: 1.5;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .app {
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        min-height: 100vh;
+      }
+      .sidebar-col {
+        width: min(420px, 100vw);
+        flex-shrink: 0;
+        overflow-y: auto;
+        max-height: 100vh;
+        padding: 12px;
+        border-right: 1px solid var(--border);
+        background: var(--bg);
+      }
+      .map-col {
+        flex: 1;
+        min-width: 200px;
+        position: relative;
+        background: #cbd5e1;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+        min-height: 320px;
+      }
+      .map-fallback {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.9rem;
+        background: #e2e8f0;
+      }
+      .map-legend {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        z-index: 2;
+        line-height: 1.45;
+        max-width: 240px;
+      }
+      @media (max-width: 900px) {
+        .app { flex-direction: column; }
+        .sidebar-col { width: 100%; max-height: none; border-right: none; border-bottom: 1px solid var(--border); }
+        .map-col { height: 42vh; min-height: 260px; }
+      }
+      .card {
+        background: var(--card);
+        border-radius: 16px;
+        padding: 22px 20px;
+        box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+        border: 1px solid var(--border);
+      }
+      h1 { font-size: 1.45rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 18px; }
+      .grid { display: grid; gap: 14px; margin-bottom: 16px; }
+      label.block {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      select, input[type="number"] {
+        width: 100%;
+        max-width: 280px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-size: 1rem;
+      }
+      input[type="range"] { width: 100%; max-width: 320px; vertical-align: middle; }
+      .row-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .trip-row label { font-weight: 500; color: var(--text); margin-right: 12px; cursor: pointer; }
+      details.advanced { margin-top: 12px; }
+      details.advanced > summary {
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        font-weight: 800;
+        color: var(--accent-dark);
+        padding: 10px 12px;
+        border: 1px dashed #99f6e4;
+        border-radius: 12px;
+        background: #f0fdfa;
+      }
+      details.advanced > summary::-webkit-details-marker { display:none; }
+      .advanced-body { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #ffffff; }
+      button#btn {
+        width: 100%;
+        padding: 14px 18px;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dark) 100%);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      button#btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      button#shareBtn {
+        width: 100%;
+        padding: 12px 18px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #ffffff;
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 800;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+      button#shareBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .pill.strong { background: #d1fae5; color: #065f46; }
+      .pill.good { background: #ecfdf5; color: #047857; }
+      .pill.bad { background: #fee2e2; color: #991b1b; }
+      .pill.warn { background: #fef3c7; color: #92400e; }
+      .pill.out { background: #e0e7ff; color: #3730a3; }
+      .summary {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f0fdfa 0%, #ecfeff 100%);
+        border: 1px solid #99f6e4;
+        font-size: 0.92rem;
+      }
+      .summary .lead { font-weight: 700; color: var(--accent-dark); margin-bottom: 8px; }
+      .summary .detail { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+      .error { color: var(--bad); margin-top: 12px; font-size: 0.9rem; }
+      .section-title {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 20px 0 8px;
+        font-weight: 700;
+      }
+      ul.stations { list-style: none; padding: 0; margin: 0; }
+      li.station {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: #fafafa;
+      }
+      li.station h3 { margin: 0 0 8px; font-size: 1.05rem; }
+      li.station .meta { color: var(--muted); font-size: 0.88rem; margin-top: 6px; }
+      li.station .net { font-size: 1.05rem; font-weight: 700; margin-top: 8px; color: var(--text); }
+      .api-note { margin-top: 20px; font-size: 0.75rem; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="sidebar-col">
+        <div class="card">
+        <h1>Worth The Drive?</h1>
+        <p class="sub">
+          Use your GPS location to find up to <strong>3 best stations within your one-way time tolerance</strong>.
+          Compare options using <strong>Net savings</strong> (savings after fuel cost for detour driving).
+        </p>
+
+        <div class="grid">
+          <div>
+            <span class="block">One-way time tolerance</span>
+            <input id="maxMinutes" type="range" min="5" max="60" step="5" value="15" />
+            <span id="maxMinutesLabel" style="font-weight:700;">15</span> min
+            <div class="muted" style="font-size:0.8rem;margin-top:4px;">Shows up to 3 candidates within this range.</div>
+          </div>
+
+          <div>
+            <span class="block">Planned fill-up amount</span>
+            <input id="liters" type="number" min="1" step="1" value="40" /> <span class="muted">L</span>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced settings (optional)</summary>
+          <div class="advanced-body">
+            <div class="grid">
+              <div>
+                <span class="block">Vehicle type (MPG estimate)</span>
+                <select id="carType">
+                  <option value="">Not sure (default)</option>
+                  <option value="compact">Compact / Sedan (~28 MPG)</option>
+                  <option value="suv">SUV (~22 MPG)</option>
+                  <option value="truck">Truck / Van (~18 MPG)</option>
+                </select>
+              </div>
+
+              <div>
+                <span class="block">Detour mode</span>
+                <div class="trip-row row-inline">
+                  <label><input type="radio" name="trip" value="round_trip" checked /> Round trip (detour and return)</label>
+                  <label><input type="radio" name="trip" value="one_way" /> One-way detour (continue forward)</label>
+                </div>
+              </div>
+
+              <div>
+                <span class="block">Baseline price (local reference)</span>
+                <label class="row-inline" style="margin-bottom:8px;">
+                  <input type="checkbox" id="useCustomBaseline" />
+                  Set manually ($/gal)
+                </label>
+                <input type="number" id="baselinePrice" step="0.001" min="0" placeholder="e.g. 3.85" disabled style="max-width:160px;" />
+                <div class="muted" style="font-size:0.8rem;margin-top:4px;">If unchecked, state average regular is used when available (fallback: nearby estimate).</div>
+              </div>
+
+              <div>
+                <span class="block">Average speed (for ETA estimate)</span>
+                <input id="speed" type="range" min="15" max="75" step="5" value="30" />
+                <span id="speedLabel" style="font-weight:700;">30</span> mph
+              </div>
+
+              <div>
+                <span class="block">Testing (optional): Manual latitude/longitude</span>
+                <label class="row-inline" style="margin-bottom:8px;">
+                  <input type="checkbox" id="useManualLocation" />
+                  Use manual coordinates instead of GPS
+                </label>
+                <div class="row-inline">
+                  <input type="number" id="manualLat" step="0.000001" placeholder="lat (e.g. 35.681236)" disabled style="max-width:180px;" />
+                  <input type="number" id="manualLng" step="0.000001" placeholder="lng (e.g. 139.767125)" disabled style="max-width:180px;" />
+                </div>
+                <div class="muted" style="font-size:0.8rem;margin-top:4px;">Useful for testing from anywhere (example: Tokyo Station lat=35.681236 / lng=139.767125).</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <button type="button" id="btn">Find best stations from my location</button>
+        <span id="status" class="pill" style="display:none;margin-left:8px;background:#e2e8f0;color:#475569;"></span>
+        <button type="button" id="shareBtn" style="display:none;">Share result</button>
+
+        <p id="err" class="error"></p>
+        <div id="summary" class="summary" style="display:none;"></div>
+
+        <div id="secWithin" style="display:none;">
+          <div class="section-title">Within tolerance (up to 3)</div>
+          <ul id="resultsWithin" class="stations"></ul>
+        </div>
+        <div id="secBeyond" style="display:none;">
+          <div class="section-title">Outside tolerance but still profitable (1 reference)</div>
+          <ul id="resultsBeyond" class="stations"></ul>
+        </div>
+
+        <p class="api-note">
+          <a href="/about">About this app / Support</a>
+        </p>
+      </div>
+      </div>
+      <div class="map-col">
+        <div id="map"></div>
+        <div id="mapFallback" class="map-fallback">
+          To show the map, set <code>GOOGLE_MAPS_API_KEY</code> in <code>.env</code> and restart the server.<br />
+          (Enable Maps JavaScript API in Google Cloud Console and restrict by HTTP referrer.)
+        </div>
+        <div id="mapLegend" class="map-legend" style="display: none;">
+          <strong>Pins</strong><br />
+          Blue: Current location<br />
+          Green: Recommended (within tolerance)<br />
+          Yellow: Other (within tolerance)<br />
+          Purple: Outside tolerance (reference)<br />
+          Gray: Other nearby stations
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const btn = document.getElementById("btn");
+      const shareBtn = document.getElementById("shareBtn");
+      const statusEl = document.getElementById("status");
+      const errEl = document.getElementById("err");
+      const summaryEl = document.getElementById("summary");
+      const resultsWithinEl = document.getElementById("resultsWithin");
+      const resultsBeyondEl = document.getElementById("resultsBeyond");
+      const secWithin = document.getElementById("secWithin");
+      const secBeyond = document.getElementById("secBeyond");
+      const carTypeEl = document.getElementById("carType");
+      const litersEl = document.getElementById("liters");
+      const maxMinutesEl = document.getElementById("maxMinutes");
+      const maxMinutesLabelEl = document.getElementById("maxMinutesLabel");
+      const speedEl = document.getElementById("speed");
+      const speedLabelEl = document.getElementById("speedLabel");
+      const useCustomBaselineEl = document.getElementById("useCustomBaseline");
+      const baselinePriceEl = document.getElementById("baselinePrice");
+      const useManualLocationEl = document.getElementById("useManualLocation");
+      const manualLatEl = document.getElementById("manualLat");
+      const manualLngEl = document.getElementById("manualLng");
+      const mapFallbackEl = document.getElementById("mapFallback");
+      const mapLegendEl = document.getElementById("mapLegend");
+
+      let gMap = null;
+      let gIw = null;
+      const gMarkers = [];
+      let lastSharePayload = null;
+
+      function loadGoogleMaps() {
+        return fetch("/api/public/map-config")
+          .then((r) => r.json())
+          .then(({ googleMapsApiKey }) => {
+            if (!googleMapsApiKey) return false;
+            if (window.google && window.google.maps) return true;
+            return new Promise((resolve) => {
+              window.initWtdMap = function () {
+                try {
+                  delete window.initWtdMap;
+                } catch (e) {}
+                resolve(true);
+              };
+              const s = document.createElement("script");
+              s.src =
+                "https://maps.googleapis.com/maps/api/js?key=" +
+                encodeURIComponent(googleMapsApiKey) +
+                "&callback=initWtdMap";
+              s.async = true;
+              s.onerror = () => resolve(false);
+              document.head.appendChild(s);
+            });
+          })
+          .catch(() => false);
+      }
+
+      function pinIcon(p) {
+        if (!p.highlight) return "https://maps.google.com/mapfiles/ms/icons/grey-dot.png";
+        if (p.within_tolerance && Number(p.net_savings) > 0)
+          return "https://maps.google.com/mapfiles/ms/icons/green-dot.png";
+        if (p.within_tolerance) return "https://maps.google.com/mapfiles/ms/icons/yellow-dot.png";
+        return "https://maps.google.com/mapfiles/ms/icons/purple-dot.png";
+      }
+
+      function updateMap(userLat, userLng, pins) {
+        if (!window.google || !window.google.maps) return;
+        mapFallbackEl.style.display = "none";
+        mapLegendEl.style.display = "block";
+        const center = { lat: userLat, lng: userLng };
+        if (!gMap) {
+          gMap = new google.maps.Map(document.getElementById("map"), {
+            center,
+            zoom: 13,
+            mapTypeControl: true,
+            streetViewControl: true,
+          });
+          gIw = new google.maps.InfoWindow();
+        }
+        gMarkers.forEach((m) => m.setMap(null));
+        gMarkers.length = 0;
+        const bounds = new google.maps.LatLngBounds();
+        bounds.extend(center);
+        const userM = new google.maps.Marker({
+          position: center,
+          map: gMap,
+          title: "Current location",
+          icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+        });
+        gMarkers.push(userM);
+        (pins || []).forEach((p) => {
+          const pos = { lat: p.lat, lng: p.lng };
+          bounds.extend(pos);
+          const m = new google.maps.Marker({
+            position: pos,
+            map: gMap,
+            title: p.name || "",
+            icon: pinIcon(p),
+          });
+          m.addListener("click", () => {
+            const net = Number(p.net_savings).toFixed(2);
+            gIw.setContent(
+              "<div style=\"max-width:220px;font-size:13px;line-height:1.4;\"><strong>" +
+                (p.name || "") +
+                "</strong><br/>Net savings: $" +
+                net +
+                "</div>"
+            );
+            gIw.open({ map: gMap, anchor: m });
+          });
+          gMarkers.push(m);
+        });
+        gMap.fitBounds(bounds, 72);
+      }
+
+      loadGoogleMaps().then((ok) => {
+        if (!ok) mapFallbackEl.style.display = "flex";
+      });
+
+      async function shareLastResult() {
+        if (!lastSharePayload) return;
+        const { best, kmW, minW, url } = lastSharePayload;
+        const title = "Worth The Drive?";
+        const text = best
+          ? `Worth The Drive? With my current settings, ${best.name} looks best (one-way ${Number(best.distance_km).toFixed(1)} km / ~${Number(best.time_minutes_one_way).toFixed(0)} min, net +$${Number(best.net_savings).toFixed(2)}).`
+          : `Worth The Drive? With my current settings, around ${Number(kmW).toFixed(1)} km (~${Number(minW).toFixed(0)} min) one-way is often still worth it.`;
+
+        if (navigator.share) {
+          await navigator.share({ title, text, url });
+          return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+          statusEl.style.display = "inline-block";
+          statusEl.textContent = "Link copied";
+          setTimeout(() => {
+            statusEl.style.display = "none";
+          }, 2000);
+          return;
+        }
+        // last resort
+        prompt("Copy this URL to share:", url);
+      }
+
+      shareBtn.addEventListener("click", async () => {
+        try {
+          shareBtn.disabled = true;
+          await shareLastResult();
+        } catch (e) {
+          // ignore
+        } finally {
+          shareBtn.disabled = false;
+        }
+      });
+
+      function tripMode() {
+        const r = document.querySelector('input[name="trip"]:checked');
+        return r && r.value === "one_way" ? "one_way" : "round_trip";
+      }
+
+      function labelForDecision(d, within) {
+        if (d === "strong") return { text: "Strongly worth it", cls: "strong" };
+        if (d === "good") return { text: "Worth it", cls: "good" };
+        if (d === "not_worth_it") return { text: "Not worth it", cls: "bad" };
+        if (d === "outside_tolerance") return { text: "Over tolerance but profitable", cls: "out" };
+        return { text: "—", cls: "warn" };
+      }
+
+      function renderStation(item, { beyond }) {
+        const li = document.createElement("li");
+        li.className = "station";
+        const km = Number(item.distance_km ?? item.distance_miles * 1.609344);
+        const mi = Number(item.distance_miles);
+        const net = Number(item.net_savings);
+        const { text, cls } = labelForDecision(item.decision, item.within_tolerance);
+        const trip = tripMode() === "one_way" ? "One-way detour" : "Round-trip detour";
+        li.innerHTML = `
+          <h3>${item.name}</h3>
+          <span class="pill ${cls}">${text}</span>
+          ${beyond ? '<span class="pill warn" style="margin-left:6px;">Outside tolerance</span>' : ""}
+          <div class="meta">
+            ${trip} · One-way <strong>${km.toFixed(2)} km</strong> (${mi.toFixed(2)} mi) · ~<strong>${Number(item.time_minutes_one_way).toFixed(1)}</strong> min
+            ${tripMode() === "round_trip" ? `(round trip ~${Number(item.time_minutes_round_trip).toFixed(1)} min)` : ""}
+          </div>
+          <div class="meta">Station price: $${Number(item.price).toFixed(3)} / gal</div>
+          <div class="net">
+            Net savings: <strong style="color:${net > 0 ? "var(--strong)" : net < 0 ? "var(--bad)" : "inherit"};">$${net.toFixed(2)}</strong>
+            <span class="muted" style="font-weight:400;font-size:0.85rem;">(price advantage vs baseline − fuel cost for detour)</span>
+          </div>
+        `;
+        return li;
+      }
+
+      useCustomBaselineEl.addEventListener("change", () => {
+        baselinePriceEl.disabled = !useCustomBaselineEl.checked;
+      });
+      useManualLocationEl.addEventListener("change", () => {
+        const enabled = useManualLocationEl.checked;
+        manualLatEl.disabled = !enabled;
+        manualLngEl.disabled = !enabled;
+      });
+      maxMinutesEl.addEventListener("input", () => {
+        maxMinutesLabelEl.textContent = String(maxMinutesEl.value);
+      });
+      speedEl.addEventListener("input", () => {
+        speedLabelEl.textContent = String(speedEl.value);
+      });
+
+      function getCurrentPosition() {
+        return new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error("Geolocation is not supported in this browser."));
+            return;
+          }
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          });
+        });
+      }
+
+      btn.addEventListener("click", async () => {
+        errEl.textContent = "";
+        summaryEl.style.display = "none";
+        summaryEl.innerHTML = "";
+        resultsWithinEl.innerHTML = "";
+        resultsBeyondEl.innerHTML = "";
+        secWithin.style.display = "none";
+        secBeyond.style.display = "none";
+        btn.disabled = true;
+        statusEl.style.display = "inline-block";
+        statusEl.textContent = "Getting location...";
+
+        try {
+          let latitude;
+          let longitude;
+          if (useManualLocationEl.checked) {
+            latitude = Number(manualLatEl.value);
+            longitude = Number(manualLngEl.value);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+              throw new Error("Please enter valid latitude and longitude.");
+            }
+          } else {
+            const pos = await getCurrentPosition();
+            latitude = pos.coords.latitude;
+            longitude = pos.coords.longitude;
+          }
+          const car_type = carTypeEl.value || null;
+          const liters_needed = Number(litersEl.value || 0);
+          const max_minutes_one_way = Number(maxMinutesEl.value || 0);
+          const avg_speed_mph = Number(speedEl.value || 30);
+          const trip_mode = tripMode();
+          let baseline_price_usd_per_gal = null;
+          if (useCustomBaselineEl.checked && baselinePriceEl.value) {
+            const v = Number(baselinePriceEl.value);
+            if (v > 0) baseline_price_usd_per_gal = v;
+          }
+
+          statusEl.textContent = "Calculating...";
+          const resp = await fetch("/api/public/recommend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              latitude,
+              longitude,
+              car_type,
+              liters_needed,
+              max_minutes_one_way,
+              avg_speed_mph,
+              trip_mode,
+              baseline_price_usd_per_gal,
+            }),
+          });
+
+          const data = await resp.json().catch(() => null);
+          if (!resp.ok) {
+            const detail = data && (data.detail || data);
+            throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+          }
+
+          statusEl.style.display = "none";
+          updateMap(latitude, longitude, data.map_pins || []);
+
+          const a = data.assumptions || {};
+          const kmW = data.max_worth_distance_km ?? 0;
+          const minW = data.max_worth_time_minutes_one_way ?? 0;
+          const best = data.best_pick_in_range;
+
+          let lead = "";
+          if (kmW > 0 && minW > 0) {
+            lead = `With your settings, stations up to about <strong>${kmW.toFixed(1)} km</strong> (~<strong>${minW.toFixed(0)}</strong> min) one-way can still be <strong>worth the detour</strong> (farthest profitable point within your tolerance).`;
+          } else {
+            lead = "No clearly profitable candidate was found within your time tolerance (net savings may be negative or near zero).";
+          }
+
+          if (best && best.net_savings > 0) {
+            lead += `<br><br>With your current setup, going to <strong>${best.name}</strong> (one-way <strong>${Number(best.distance_km).toFixed(1)} km</strong>, ~<strong>${Number(best.time_minutes_one_way).toFixed(1)}</strong> min) is estimated to save <strong>$${Number(best.net_savings).toFixed(2)}</strong> net.`;
+          }
+
+          const baseSrc =
+            a.baseline_price_source === "user_override"
+              ? "manual baseline (your input)"
+              : a.baseline_price_source === "state_average_regular"
+                ? `state average regular (${a.baseline_state_name || "unknown state"})`
+                : "nearby fallback estimate";
+
+          summaryEl.innerHTML = `
+            <div class="lead">${lead}</div>
+            <div class="detail">
+              Baseline: $${Number(a.current_price_assumed).toFixed(3)}/gal (${baseSrc})<br>
+              Planned fill-up: ${Number(a.liters_needed).toFixed(0)} L (~${Number(a.gallons_needed).toFixed(2)} gal) · Tolerance: ${a.max_minutes_one_way} min one-way · Speed ${a.avg_speed_mph} mph · ${a.trip_mode === "one_way_detour" ? "one-way detour" : "round-trip detour"}
+            </div>
+          `;
+          if (data.quota) {
+            const q = data.quota;
+            const rem = (q.remaining === null || q.remaining === undefined) ? "—" : String(q.remaining);
+            const quotaLine = `<div class="detail" style="margin-top:8px;">Free daily usage: <strong>${q.used}</strong> / ${q.limit} (remaining ${rem}) · resets: ${q.resets_at_utc}</div>`;
+            summaryEl.innerHTML += quotaLine;
+          }
+          summaryEl.style.display = "block";
+          lastSharePayload = {
+            url: window.location.origin + window.location.pathname,
+            best,
+            kmW,
+            minW,
+          };
+          shareBtn.style.display = "block";
+
+          const within = data.recommendations_within_tolerance || data.recommendations || [];
+          if (within.length) {
+            secWithin.style.display = "block";
+            within.forEach((item) => resultsWithinEl.appendChild(renderStation(item, { beyond: false })));
+          } else {
+            secWithin.style.display = "block";
+            resultsWithinEl.innerHTML = '<li class="station muted">No candidate found within your current tolerance. Try increasing your time tolerance or testing a different area.</li>';
+          }
+
+          const beyond = data.recommendation_beyond_tolerance;
+          if (beyond) {
+            secBeyond.style.display = "block";
+            resultsBeyondEl.appendChild(renderStation(beyond, { beyond: true }));
+          }
+        } catch (e) {
+          statusEl.style.display = "none";
+          const msg = String(e && e.message ? e.message : e);
+          if (msg.includes("Daily free limit reached")) {
+            errEl.textContent = "Today's free limit is reached. It will reset tomorrow.";
+          } else if (e && e.code === 1) errEl.textContent = "Location permission was denied. Please allow it in your browser settings.";
+          else if (e && e.code === 2) errEl.textContent = "Location is unavailable.";
+          else if (e && e.code === 3) errEl.textContent = "Location request timed out.";
+          else errEl.textContent = msg;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

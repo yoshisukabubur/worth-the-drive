@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About – Worth The Drive?</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f0f4f8;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --accent: #0d9488;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 18px; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; line-height: 1.55; }
+      .wrap { max-width: 820px; margin: 0 auto; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px; box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06); }
+      h1 { margin: 0 0 8px; letter-spacing: -0.02em; }
+      h2 { margin: 18px 0 8px; font-size: 1.05rem; }
+      p, li { color: var(--text); }
+      .muted { color: var(--muted); }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .btn { display: inline-block; padding: 10px 14px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 700; }
+      .btn:visited { color: #fff; }
+      code { background: #eef2f7; padding: 2px 6px; border-radius: 8px; }
+      .top { display:flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="top">
+          <h1>About – Worth The Drive?</h1>
+          <a class="btn" href="/">Back to app</a>
+        </div>
+        <p class="muted">
+          A lightweight calculator built to solve the classic problem:
+          driving farther for cheaper gas can still cost you more once detour fuel is included.
+        </p>
+
+        <h2>What this app does</h2>
+        <ul>
+          <li>Find which candidate is <strong>actually best</strong> within your time tolerance</li>
+          <li>Show <strong>Net savings</strong> after subtracting detour fuel cost</li>
+          <li>Compare stations with both map (Google Maps) and ranked list</li>
+        </ul>
+
+        <h2>What is Net savings?</h2>
+        <p>
+          Net savings = money saved by buying cheaper gas compared to baseline
+          minus extra fuel cost caused by the detour drive.
+        </p>
+        <p class="muted">
+          MPG and speed are estimates. You can adjust them in Advanced settings.
+        </p>
+
+        <h2>Privacy</h2>
+        <ul>
+          <li>Location is obtained on your device. It is used for calculation but not stored permanently on the server.</li>
+          <li>A simple free-tier usage limit (IP-based) is used to keep service costs under control.</li>
+        </ul>
+
+        <h2>Support (optional)</h2>
+        <p>
+          Running server, map, and pricing APIs costs money. If this tool helps you, optional support is appreciated.
+        </p>
+        <p>
+          <a id="donatePaypal" class="btn" href="#" style="display:none;">Donate via PayPal</a>
+          <a id="donateCoffee" class="btn" href="#" style="display:none;margin-left:10px;">Buy Me a Coffee</a>
+          <span id="donateHint" class="muted">(Donation links are not configured yet.)</span>
+        </p>
+
+        <h2>Feedback</h2>
+        <p class="muted">
+          This is an early prototype. Feedback on clarity and missing features is welcome.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // Donation URL is optional and provided by backend config.
+      fetch("/api/public/app-config")
+        .then((r) => r.json())
+        .then((cfg) => {
+          const paypal = cfg && cfg.donationPaypalUrl;
+          const coffee = cfg && cfg.donationCoffeeUrl;
+          const btnPaypal = document.getElementById("donatePaypal");
+          const btnCoffee = document.getElementById("donateCoffee");
+          const hint = document.getElementById("donateHint");
+          let any = false;
+          if (paypal) {
+            btnPaypal.href = paypal;
+            btnPaypal.target = "_blank";
+            btnPaypal.rel = "noopener noreferrer";
+            btnPaypal.style.display = "inline-block";
+            any = true;
+          }
+          if (coffee) {
+            btnCoffee.href = coffee;
+            btnCoffee.target = "_blank";
+            btnCoffee.rel = "noopener noreferrer";
+            btnCoffee.style.display = "inline-block";
+            any = true;
+          }
+          if (any) hint.style.display = "none";
+        })
+        .catch(() => {});
+    </script>
+  </body>
+</html>
+

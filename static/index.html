@@ -56,7 +56,7 @@
       .map-fallback {
         position: absolute;
         inset: 0;
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: center;
         padding: 20px;
@@ -298,8 +298,7 @@
       <div class="map-col">
         <div id="map"></div>
         <div id="mapFallback" class="map-fallback">
-          To show the map, set <code>GOOGLE_MAPS_API_KEY</code> in <code>.env</code> and restart the server.<br />
-          (Enable Maps JavaScript API in Google Cloud Console and restrict by HTTP referrer.)
+          <span id="mapFallbackText">Loading map…</span>
         </div>
         <div id="mapLegend" class="map-legend" style="display: none;">
           <strong>Pins</strong><br />
@@ -334,6 +333,7 @@
       const manualLatEl = document.getElementById("manualLat");
       const manualLngEl = document.getElementById("manualLng");
       const mapFallbackEl = document.getElementById("mapFallback");
+      const mapFallbackTextEl = document.getElementById("mapFallbackText");
       const mapLegendEl = document.getElementById("mapLegend");
 
       let gMap = null;
@@ -426,7 +426,18 @@
       }
 
       loadGoogleMaps().then((ok) => {
-        if (!ok) mapFallbackEl.style.display = "flex";
+        if (ok) {
+          mapFallbackEl.style.display = "none";
+        } else {
+          mapFallbackEl.style.display = "flex";
+          if (mapFallbackTextEl) {
+            mapFallbackTextEl.innerHTML =
+              'Map unavailable. For local dev, set <code>GOOGLE_MAPS_API_KEY</code> in <code>.env</code> and restart. ' +
+              "On production, set the same variable in your host (e.g. Render) and enable " +
+              '<a href="https://developers.google.com/maps/documentation/javascript" target="_blank" rel="noopener">Maps JavaScript API</a> ' +
+              "with HTTP referrer restrictions.";
+          }
+        }
       });
 
       async function shareLastResult() {

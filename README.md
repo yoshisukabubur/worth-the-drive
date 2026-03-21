@@ -75,6 +75,24 @@ python api_server.py
   - `.env` の `RATE_LIMIT_PER_MINUTE` を適切に設定（IPレート制限）
   - `.env` の `STATE_PRICES_URL` を設定して州別価格APIを有効化（`/api/state-prices`）
 
+## Production checklist (Render / similar)
+
+Use `.env.example` as a template. On the host, set at least:
+
+| Variable | Example |
+|----------|---------|
+| `RAPIDAPI_KEY` | Your RapidAPI key |
+| `RAPIDAPI_HOST` | `gas-price.p.rapidapi.com` |
+| `ALL_USA_PRICE_URL` | `https://gas-price.p.rapidapi.com/allUsaPrice` |
+| `ALLOWED_ORIGINS` | `https://your-service.onrender.com` (no trailing slash) |
+| `GOOGLE_MAPS_API_KEY` | Maps JavaScript API key (restrict by HTTP referrer) |
+| `FREE_DAILY_LIMIT` | `20` (optional) |
+| `DONATION_PAYPAL_URL` / `DONATION_COFFEE_URL` | Optional |
+
+**Security:** Never commit `.env`. Confirm with `git ls-files` that `.env` is not tracked.
+
+**Live site:** [worth-the-drive.onrender.com](https://worth-the-drive.onrender.com/) (example)
+
 ## 今後のロードマップ（案）
 
 - **Step 1: APIプロキシ（バックエンド）**

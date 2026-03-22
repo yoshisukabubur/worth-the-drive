@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -557,14 +558,14 @@ def _compute_recommendations(
         )
     elif station_source == "osm_openstreetmap":
         station_price_note = (
-            "Station locations from OpenStreetMap (real map pins). "
-            "Prices are estimated from your state's average regular (RapidAPI), "
-            "not live pump prices."
+            "Pins use OpenStreetMap fuel locations (not Google’s business layer). "
+            "They can differ from what you see on the satellite map (outdated/offset mapping). "
+            "Prices are estimated from state average regular—not live pump prices."
         )
     elif station_source == "demo_us_fallback":
         station_price_note = (
-            "Illustrative stations (could not load enough OSM results). "
-            "Prices are estimated from state average or fallback."
+            "Illustrative pins in a ring around your point (OSM data unavailable). "
+            "They are not real nearby stations on the map—use for math testing only."
         )
     else:
         station_price_note = "Illustrative US-pattern stations for testing."
@@ -625,6 +626,85 @@ def _osm_stations_enabled() -> bool:
     return v not in ("0", "false", "no", "off")
 
 
+def _osm_brand_filter_enabled() -> bool:
+    """Prefer mapped brand/operator; drop anonymous OSM fuel points."""
+    v = (os.environ.get("OSM_BRAND_FILTER") or "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+# Substrings / patterns for common US fuel brands when only `name` is set (no brand tag)
+_US_CHAIN_NAME_PATTERNS: Tuple[Tuple[str, str], ...] = (
+    # (regex, description) — order: multi-word before short tokens
+    (r"chevron", "chevron"),
+    (r"exxon|exxonmobil|exxon\s*mobil", "exxon"),
+    (r"\bshell\b", "shell"),
+    (r"\bmobil\b", "mobil"),
+    (r"texaco", "texaco"),
+    (r"\barco\b", "arco"),
+    (r"\bbp\b", "bp"),
+    (r"circle\s*k", "circle k"),
+    (r"speedway", "speedway"),
+    (r"marathon", "marathon"),
+    (r"valero", "valero"),
+    (r"phillips\s*66|phillips", "phillips"),
+    (r"conoco", "conoco"),
+    (r"sinclair", "sinclair"),
+    (r"wawa", "wawa"),
+    (r"sheetz", "sheetz"),
+    (r"quiktrip|quick\s*trip", "quiktrip"),
+    (r"kwik\s*trip|kwik\s*star", "kwik trip"),
+    (r"casey'?s", "casey's"),
+    (r"maverick", "maverick"),
+    (r"costco", "costco"),
+    (r"7[\s-]*eleven|7[\s-]*11\b", "7-eleven"),
+    (r"\bampm\b|am\s*/?\s*pm", "ampm"),
+    (r"pilot|flying\s*j|pilot\s*flying", "pilot"),
+    (r"love'?s\s+travel|love'?s\b", "love's"),
+    (r"buc[\s-]*ee", "buc-ee's"),
+    (r"murphy\s*usa|murphy", "murphy"),
+    (r"sunoco", "sunoco"),
+    (r"citgo", "citgo"),
+    (r"racetrac|race\s*trac", "racetrac"),
+    (r"thornton", "thorntons"),
+    (r"getgo", "getgo"),
+    (r"kroger", "kroger"),
+    (r"safeway", "safeway"),
+    (r"union\s*76|\bu\s*76\b", "76"),
+    (r"esso", "esso"),
+    (r"total\s+gas|total\s+fuel", "total"),
+    (r"stripes", "stripes"),
+    (r"cumberland\s*farms", "cumberland"),
+    (r"royal\s*farms", "royal farms"),
+    (r"holiday\s*\(?station", "holiday"),
+    (r"mapco", "mapco"),
+    (r"yesway", "yesway"),
+)
+
+
+def _osm_name_looks_like_us_chain(name_lower: str) -> bool:
+    if len(name_lower) < 3:
+        return False
+    for pat, _ in _US_CHAIN_NAME_PATTERNS:
+        if re.search(pat, name_lower, re.IGNORECASE):
+            return True
+    return False
+
+
+def _osm_passes_brand_filter(tags: Dict[str, Any]) -> bool:
+    """
+    Keep stations that have explicit brand/operator mapping, or a recognizable chain name.
+    Reduces stray / mis-tagged rural OSM points.
+    """
+    if not isinstance(tags, dict):
+        return False
+    brand = (tags.get("brand") or "").strip()
+    operator = (tags.get("operator") or "").strip()
+    if brand or operator:
+        return True
+    name = (tags.get("name") or "").strip().lower()
+    return _osm_name_looks_like_us_chain(name)
+
+
 def _deterministic_price_multiplier(seed: str) -> float:
     """Small spread around state average (not live pump prices)."""
     h = int(hashlib.md5(seed.encode()).hexdigest()[:8], 16)
@@ -640,7 +720,7 @@ def _fetch_us_fuel_stations_osm(latitude: float, longitude: float) -> List[Dict[
     if not _osm_stations_enabled():
         return []
 
-    cache_key = f"osm:fuel:{round(latitude, 4)},{round(longitude, 4)}"
+    cache_key = f"osm:fuel:v3-brand:{round(latitude, 4)},{round(longitude, 4)}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return list(cached)
@@ -682,6 +762,9 @@ def _fetch_us_fuel_stations_osm(latitude: float, longitude: float) -> List[Dict[
         typ = el.get("type")
         eid = el.get("id")
         tags = el.get("tags") if isinstance(el.get("tags"), dict) else {}
+        if _osm_brand_filter_enabled() and not _osm_passes_brand_filter(tags):
+            continue
+
         name = (
             tags.get("name")
             or tags.get("brand")

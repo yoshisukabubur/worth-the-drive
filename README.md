@@ -87,6 +87,7 @@ Use `.env.example` as a template. On the host, set at least:
 | `ALLOWED_ORIGINS` | `https://your-service.onrender.com` (no trailing slash) |
 | `GOOGLE_MAPS_API_KEY` | Maps JavaScript API key (restrict by HTTP referrer) |
 | `USE_OSM_STATIONS` | `1` (default): real US fuel station pins via OpenStreetMap; `0` = illustrative mock only |
+| `OSM_BRAND_FILTER` | `1` (default): only OSM points with `brand`/`operator` or a known US chain in `name`; `0` = all OSM fuel |
 | `FREE_DAILY_LIMIT` | `20` (optional) |
 | `DONATION_PAYPAL_URL` / `DONATION_COFFEE_URL` | Optional |
 

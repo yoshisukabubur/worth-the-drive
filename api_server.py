@@ -1,3 +1,4 @@
+import hashlib
 import os
 import time
 from collections import deque
@@ -397,7 +398,30 @@ def _compute_recommendations(
     trip_mode: str = "round_trip",
     baseline_price_usd_per_gal: Optional[float] = None,
 ) -> Dict[str, Any]:
-    stations = _mock_fetch_nearby_stations(latitude, longitude)
+    in_us = _is_in_united_states(latitude, longitude)
+    station_source = "demo_non_us"
+    region_notice: Optional[str] = None
+
+    if in_us:
+        stations = _fetch_us_fuel_stations_osm(latitude, longitude)
+        if len(stations) >= 2:
+            station_source = "osm_openstreetmap"
+        else:
+            stations = _mock_fetch_nearby_stations(latitude, longitude, outside_us=False)
+            station_source = "demo_us_fallback"
+            region_notice = (
+                "Could not load enough nearby stations from OpenStreetMap. "
+                "Showing illustrative US-style stations instead. Try again later or check USE_OSM_STATIONS."
+            )
+    else:
+        stations = _mock_fetch_nearby_stations(latitude, longitude, outside_us=True)
+        station_source = "demo_non_us"
+        region_notice = (
+            "You appear to be outside the United States. "
+            "Station names and prices are for testing only (USD/gallon math). "
+            "For real US driving, use a location inside the US."
+        )
+
     car_mpg = _car_mpg_from_type(car_type)
     gallons_needed = _liters_to_gallons(liters_needed)
     one_way_mode = trip_mode.strip().lower() in {"one_way", "oneway", "one-way"}
@@ -408,6 +432,11 @@ def _compute_recommendations(
             "recommendations_within_tolerance": [],
             "recommendation_beyond_tolerance": None,
             "map_pins": [],
+            "region": "us" if in_us else "outside_us",
+            "region_in_us": in_us,
+            "station_source": station_source,
+            "region_notice": region_notice,
+            "station_price_note": None,
             "assumptions": {
                 "car_mpg": car_mpg,
                 "liters_needed": liters_needed,
@@ -424,9 +453,16 @@ def _compute_recommendations(
     )
 
     state_name = _reverse_geocode_state_name(latitude, longitude)
-    baseline_from_state = None
-    if state_name:
-        baseline_from_state = _get_state_average_regular_price_usd(state_name)
+    baseline_from_state = _try_state_average_usd(state_name) if state_name else None
+
+    # US + OSM: per-station prices estimated from state average (not live pump prices)
+    if in_us and station_source == "osm_openstreetmap":
+        _assign_prices_from_state_model(stations, baseline_from_state)
+        # Refresh nearest after prices assigned
+        nearest = min(
+            stations,
+            key=lambda s: _haversine_miles(latitude, longitude, float(s["latitude"]), float(s["longitude"])),
+        )
 
     if baseline_price_usd_per_gal is not None and baseline_price_usd_per_gal > 0:
         current_price = float(baseline_price_usd_per_gal)
@@ -514,11 +550,35 @@ def _compute_recommendations(
         for e in enriched
     ]
 
+    if not in_us:
+        station_price_note = (
+            "Illustrative USD/gallon prices for testing outside the United States. "
+            "Not real local stations."
+        )
+    elif station_source == "osm_openstreetmap":
+        station_price_note = (
+            "Station locations from OpenStreetMap (real map pins). "
+            "Prices are estimated from your state's average regular (RapidAPI), "
+            "not live pump prices."
+        )
+    elif station_source == "demo_us_fallback":
+        station_price_note = (
+            "Illustrative stations (could not load enough OSM results). "
+            "Prices are estimated from state average or fallback."
+        )
+    else:
+        station_price_note = "Illustrative US-pattern stations for testing."
+
     return {
         "recommendations": top3_within,
         "recommendations_within_tolerance": top3_within,
         "recommendation_beyond_tolerance": best_outside,
         "map_pins": map_pins,
+        "region": "us" if in_us else "outside_us",
+        "region_in_us": in_us,
+        "station_source": station_source,
+        "region_notice": region_notice,
+        "station_price_note": station_price_note,
         "assumptions": {
             "car_mpg": car_mpg,
             "liters_needed": liters_needed,
@@ -529,12 +589,159 @@ def _compute_recommendations(
             "baseline_state_name": state_name,
             "baseline_price_source": baseline_source,
             "trip_mode": "one_way_detour" if one_way_mode else "round_trip",
+            "station_data_source": station_source,
+            "station_price_note": station_price_note,
         },
         "max_worth_distance_miles": round(max_worth_distance, 2),
         "max_worth_distance_km": round(max_worth_distance * 1.609344, 2),
         "max_worth_time_minutes_one_way": round((max_worth_distance / avg_speed_mph) * 60.0, 1) if avg_speed_mph > 0 else 0.0,
         "best_pick_in_range": best_in_range,
     }
+
+
+def _is_in_united_states(latitude: float, longitude: float) -> bool:
+    """
+    Rough bounding regions for the United States (incl. AK, HI, PR).
+    Used to choose real US station data vs illustrative demo outside the US.
+    """
+    lat, lon = float(latitude), float(longitude)
+    # Continental US (lower 48)
+    if 24.0 <= lat <= 50.0 and -125.0 <= lon <= -66.0:
+        return True
+    # Alaska
+    if 51.0 <= lat <= 71.5 and -179.0 <= lon <= -129.0:
+        return True
+    # Hawaii
+    if 18.0 <= lat <= 22.5 and -161.0 <= lon <= -154.0:
+        return True
+    # Puerto Rico
+    if 17.8 <= lat <= 18.6 and -67.5 <= lon <= -65.2:
+        return True
+    return False
+
+
+def _osm_stations_enabled() -> bool:
+    v = (os.environ.get("USE_OSM_STATIONS") or "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def _deterministic_price_multiplier(seed: str) -> float:
+    """Small spread around state average (not live pump prices)."""
+    h = int(hashlib.md5(seed.encode()).hexdigest()[:8], 16)
+    # Range ~0.94 .. 1.08
+    return 0.94 + (h % 1400) / 10000.0
+
+
+def _fetch_us_fuel_stations_osm(latitude: float, longitude: float) -> List[Dict[str, Any]]:
+    """
+    Real fuel station locations in the US from OpenStreetMap (Overpass API).
+    Prices are NOT from OSM here — filled later from state average model.
+    """
+    if not _osm_stations_enabled():
+        return []
+
+    cache_key = f"osm:fuel:{round(latitude, 4)},{round(longitude, 4)}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return list(cached)
+
+    query = (
+        f"[out:json][timeout:25];"
+        f"("
+        f'  node["amenity"="fuel"](around:12000,{latitude},{longitude});'
+        f'  way["amenity"="fuel"](around:12000,{latitude},{longitude});'
+        f");"
+        f"out center 30;"
+    )
+    try:
+        resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+            headers={"User-Agent": "worth-the-drive/0.2 (US fuel stations; contact via site)"},
+            timeout=22,
+        )
+    except requests.RequestException:
+        return []
+
+    if resp.status_code != 200:
+        return []
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return []
+
+    elements = data.get("elements")
+    if not isinstance(elements, list):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for el in elements:
+        if not isinstance(el, dict):
+            continue
+        typ = el.get("type")
+        eid = el.get("id")
+        tags = el.get("tags") if isinstance(el.get("tags"), dict) else {}
+        name = (
+            tags.get("name")
+            or tags.get("brand")
+            or tags.get("operator")
+            or "Gas station"
+        )
+        if not isinstance(name, str):
+            name = "Gas station"
+        name = name.strip()[:120] or "Gas station"
+
+        la = lo = None
+        if typ == "node":
+            la = el.get("lat")
+            lo = el.get("lon")
+        elif typ == "way":
+            center = el.get("center")
+            if isinstance(center, dict):
+                la = center.get("lat")
+                lo = center.get("lon")
+        else:
+            continue
+
+        if la is None or lo is None:
+            continue
+
+        out.append(
+            {
+                "id": f"osm-{typ}-{eid}",
+                "name": name,
+                "latitude": float(la),
+                "longitude": float(lo),
+                "price": 0.0,
+                "address": "OpenStreetMap",
+            }
+        )
+
+    # Closest first (more relevant for drivers)
+    out.sort(
+        key=lambda s: _haversine_miles(latitude, longitude, float(s["latitude"]), float(s["longitude"]))
+    )
+    out = out[:18]
+    _cache_set(cache_key, out)
+    return out
+
+
+def _try_state_average_usd(state_name: Optional[str]) -> Optional[float]:
+    if not state_name:
+        return None
+    try:
+        return _get_state_average_regular_price_usd(state_name)
+    except (RuntimeError, HTTPException):
+        return None
+
+
+def _assign_prices_from_state_model(stations: List[Dict[str, Any]], state_avg: Optional[float]) -> None:
+    base = float(state_avg) if state_avg and state_avg > 0 else 3.49
+    for s in stations:
+        sid = str(s.get("id", "x"))
+        mult = _deterministic_price_multiplier(sid)
+        s["price"] = round(base * mult, 3)
 
 
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -548,12 +755,14 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return r_miles * c
 
 
-def _mock_fetch_nearby_stations(latitude: float, longitude: float) -> List[Dict[str, Any]]:
+def _mock_fetch_nearby_stations(
+    latitude: float, longitude: float, *, outside_us: bool = False
+) -> List[Dict[str, Any]]:
     """
-    Mock function standing in for a RapidAPI call.
-    Replace this with a real upstream call later.
+    Illustrative nearby stations for UX testing.
+    - outside_us: generic labels (not US-specific brands)
+    - US fallback: common US brand names for local testing when OSM is unavailable
     """
-    # Deterministic pseudo "nearby" stations around current location
     stations: List[Dict[str, Any]] = []
     offsets = [
         (0.010, 0.005, 3.49, "Chevron"),
@@ -566,14 +775,22 @@ def _mock_fetch_nearby_stations(latitude: float, longitude: float) -> List[Dict[
         (-0.025, -0.016, 3.42, "Circle K"),
     ]
     for i, (dlat, dlon, price, brand) in enumerate(offsets, start=1):
+        if outside_us:
+            label = f"Illustrative fuel stop (non-US test) #{i}"
+            sid = f"demo-ext-{i}"
+            addr = "Demo (outside US)"
+        else:
+            label = f"{brand} #{i}"
+            sid = f"mock-{i}"
+            addr = "Illustrative (US demo)"
         stations.append(
             {
-                "id": f"mock-{i}",
-                "name": f"{brand} #{i}",
+                "id": sid,
+                "name": label,
                 "latitude": latitude + dlat,
                 "longitude": longitude + dlon,
                 "price": float(price),
-                "address": "Mock address",
+                "address": addr,
             }
         )
     return stations

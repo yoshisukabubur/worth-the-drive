@@ -218,6 +218,26 @@
       li.station .meta { color: var(--muted); font-size: 0.88rem; margin-top: 6px; }
       li.station .net { font-size: 1.05rem; font-weight: 700; margin-top: 8px; color: var(--text); }
       .api-note { margin-top: 20px; font-size: 0.75rem; color: var(--muted); }
+      .region-banner {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        color: #9a3412;
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 0.88rem;
+        margin-bottom: 10px;
+        line-height: 1.45;
+      }
+      .data-note {
+        background: #ecfeff;
+        border: 1px solid #a5f3fc;
+        color: #0e7490;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        margin-bottom: 10px;
+        line-height: 1.45;
+      }
     </style>
   </head>
   <body>
@@ -226,7 +246,8 @@
         <div class="card">
         <h1>Worth The Drive?</h1>
         <p class="sub">
-          Use your GPS location to find up to <strong>3 best stations within your one-way time tolerance</strong>.
+          Built for <strong>United States</strong> drivers (USD/gallon, miles). Outside the U.S., results are for testing only.
+          Use your location to find up to <strong>3 best stations within your one-way time tolerance</strong>.
           Compare options using <strong>Net savings</strong> (savings after fuel cost for detour driving).
         </p>
 
@@ -652,7 +673,16 @@
                 ? `state average regular (${a.baseline_state_name || "unknown state"})`
                 : "nearby fallback estimate";
 
+          let notices = "";
+          if (data.region_notice) {
+            notices += `<div class="region-banner">${data.region_notice}</div>`;
+          }
+          if (data.station_price_note) {
+            notices += `<div class="data-note">${data.station_price_note}</div>`;
+          }
+
           summaryEl.innerHTML = `
+            ${notices}
             <div class="lead">${lead}</div>
             <div class="detail">
               Baseline: $${Number(a.current_price_assumed).toFixed(3)}/gal (${baseSrc})<br>
